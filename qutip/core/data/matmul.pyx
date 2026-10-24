@@ -110,7 +110,7 @@ cdef int _check_shape(Data left, Data right, Data out=None) except -1 nogil:
         )
     return 0
 
-cdef idxint _matmul_csr_estimate_nnz(CSR left, CSR right):
+cdef idxint _matmul_csr_estimate_nnz(CSR left, CSR right) except -1:
     """
     Produce a sensible upper-bound for the number of non-zero elements that
     will be present in a matrix multiplication between the two matrices.
@@ -118,8 +118,12 @@ cdef idxint _matmul_csr_estimate_nnz(CSR left, CSR right):
     cdef idxint j, k, nnz=0
     cdef idxint ii, jj, kk
     cdef idxint nrows=left.shape[0], ncols=right.shape[1]
+    if nrows == 0 or ncols == 0:
+        return 0
     # Setup mask array
     cdef idxint *mask = <idxint *> mem.PyMem_Malloc(ncols * sizeof(idxint))
+    if mask == NULL:
+        raise MemoryError
     with nogil:
         for ii in range(ncols):
             mask[ii] = -1
@@ -185,6 +189,10 @@ cpdef CSR matmul_csr(CSR left, CSR right, double complex scale=1, CSR out=None):
         tol = settings.core['auto_tidyup_atol']
     sums = <double complex *> PyMem_Calloc(ncols, sizeof(double complex))
     nxt = <idxint *> mem.PyMem_Malloc(ncols * sizeof(idxint))
+    if sums == NULL or nxt == NULL:
+        mem.PyMem_Free(sums)
+        mem.PyMem_Free(nxt)
+        raise MemoryError
     with nogil:
         for col_r in range(ncols):
             nxt[col_r] = -1

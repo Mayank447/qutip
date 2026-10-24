@@ -38,12 +38,16 @@ cdef class _Indexer:
         cdef idxint dim, ord
         cdef idxint prev
         self.ndims = dimensions.shape[0]
+        if self.ndims == 0:
+            raise ValueError("dimensions must contain at least one entry")
         self.dimensions = dimensions
         self.new_dimensions = cnp.PyArray_EMPTY(1, [self.ndims], idxint_DTYPE, False)
         cdef idxint[:] new_dimensions = self.new_dimensions
         if order.shape[0] != self.ndims:
             raise ValueError("invalid order: wrong number of elements")
         cdef bint *tmp = <bint *> PyMem_Calloc(self.ndims, sizeof(bint))
+        if tmp == NULL:
+            raise MemoryError
         try:
             for i in range(self.ndims):
                 ord = order[i]
@@ -61,6 +65,8 @@ cdef class _Indexer:
         finally:
             mem.PyMem_Free(tmp)
         self.cumprod = <idxint *> mem.PyMem_Malloc(self.ndims * sizeof(idxint))
+        if self.cumprod == NULL:
+            raise MemoryError
         prev = self.cumprod[order[self.ndims - 1]] = 1
         for i in range(self.ndims - 2, -1, -1):
             prev = self.cumprod[order[i]] = prev * new_dimensions[i + 1]
@@ -163,9 +169,13 @@ cdef CSR _indices_csr_full(CSR matrix, idxint[:] rows, idxint[:] cols):
             len = n if n > len else len
         for row in range(matrix.shape[0]):
             out.row_index[row + 1] += out.row_index[row]
+    if len == 0:
+        return out
     # Now we know that `len` is the most number of non-zero elements in a row,
     # so we can allocate space to sort only once.
     cdef idxint *new_cols = <idxint *> mem.PyMem_Malloc(len * sizeof(idxint))
+    if new_cols == NULL:
+        raise MemoryError
     cdef csr.Sorter sort = csr.Sorter(len)
     for row in range(matrix.shape[0]):
         ptr_in = matrix.row_index[row]
@@ -182,12 +192,16 @@ cdef CSR _indices_csr_full(CSR matrix, idxint[:] rows, idxint[:] cols):
 cpdef CSR indices_csr(CSR matrix, object row_perm=None, object col_perm=None):
     if row_perm is None and col_perm is None:
         return matrix.copy()
+    if matrix.shape[0] == 0:
+        return matrix.copy()
     if col_perm is None:
         return _indices_csr_rowonly(matrix, np.asarray(row_perm, dtype=idxint_dtype))
     cdef idxint *rows = NULL
     cdef idxint n
     if row_perm is None:
         rows = <idxint *> mem.PyMem_Malloc(matrix.shape[0] * sizeof(idxint))
+        if rows == NULL:
+            raise MemoryError
         for n in range(matrix.shape[0]):
             rows[n] = n
         try:
@@ -218,9 +232,13 @@ cdef CSR _dimensions_csr_columns(CSR matrix, _Indexer index):
     cdef CSR out = csr.empty_like(matrix)
     out.row_index[0] = 0
     out.row_index[1] = nnz
+    if nnz == 0:
+        return out
     cdef size_t n
     cdef csr.Sorter sort = csr.Sorter(nnz)
     cdef idxint *new_cols = <idxint *> mem.PyMem_Malloc(nnz * sizeof(idxint))
+    if new_cols == NULL:
+        raise MemoryError
     try:
         for n in range(nnz):
             new_cols[n] = index.single(matrix.col_index[n])
@@ -234,7 +252,11 @@ cdef CSR _dimensions_csr_sparse(CSR matrix, _Indexer index):
     cdef csr.Sorter sort
     cdef size_t row, n, len=0
     cdef idxint ptr_in, ptr_out, col
+    if matrix.shape[0] == 0:
+        return out
     cdef idxint *idx_lookup = <idxint *> mem.PyMem_Malloc(matrix.shape[0] * sizeof(idxint))
+    if idx_lookup == NULL:
+        raise MemoryError
     try:
         memset(&out.row_index[0], 0, (matrix.shape[0] + 1) * sizeof(idxint))
         with nogil:

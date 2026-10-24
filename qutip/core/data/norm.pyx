@@ -36,7 +36,11 @@ __all__ = []
 cpdef double one_csr(CSR matrix) except -1:
     cdef int n=matrix.shape[1], inc=1
     cdef size_t ptr
+    if n == 0:
+        return 0
     cdef double *col = <double *> PyMem_Calloc(matrix.shape[1], sizeof(double))
+    if col == NULL:
+        raise MemoryError
     try:
         for ptr in range(csr.nnz(matrix)):
             col[matrix.col_index[ptr]] += abs(matrix.data[ptr])
